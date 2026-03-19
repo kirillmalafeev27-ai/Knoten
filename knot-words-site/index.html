@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="Knot Words ist ein deutsches Sprachlernspiel auf Canvas-Basis mit Satzpfaden, Glow-Effekten und GitHub-Pages-freundlicher Architektur.">
+  <title>Knot Words</title>
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles/main.css">
+</head>
+<body>
+  <header class="site-header">
+    <div>
+      <h1>Knot Words</h1>
+      <div class="tag">
+        <div class="tdot"></div>
+        <span class="ttxt" id="topic-tag">Sentence Paths</span>
+      </div>
+    </div>
+    <div class="lvi">
+      <p class="lvl">Level</p>
+      <p class="lvn" id="lvn">00<span>/00</span></p>
+    </div>
+  </header>
+
+  <main class="site-main">
+    <section class="screen screen--profile" id="profile-screen" aria-labelledby="profile-title">
+      <div class="profile-shell">
+        <div class="profile-copy">
+          <p class="eyebrow">Deutsch lernen mit Flow</p>
+          <h2 id="profile-title">Baue dein Lernprofil und verbinde ganze Sätze.</h2>
+          <p class="profile-lead">
+            Wort für Wort, Satz für Satz: Das Raster bleibt dem Original treu, aber jetzt lösen wir echte deutsche
+            Aussagen statt Farbpaare.
+          </p>
+        </div>
+
+        <form class="profile-card" id="profile-form">
+          <label class="field">
+            <span>Wie heißt du?</span>
+            <input id="profile-name" name="name" type="text" maxlength="24" placeholder="Zum Beispiel Ivan" autocomplete="name">
+          </label>
+
+          <fieldset class="field-group">
+            <legend>Wie alt bist du?</legend>
+            <div class="chip-grid chip-grid--compact" id="age-options"></div>
+          </fieldset>
+
+          <fieldset class="field-group">
+            <legend>Dein Niveau?</legend>
+            <div class="chip-grid chip-grid--compact" id="level-options"></div>
+          </fieldset>
+
+          <label class="field">
+            <span>Welche Themen willst du lernen?</span>
+            <input
+              id="profile-topic"
+              name="topic"
+              type="text"
+              maxlength="80"
+              placeholder="Zum Beispiel Essen, Fussball, Reisen, Politik, Medizin..."
+              autocomplete="off"
+            >
+          </label>
+
+          <button class="cta-button" id="profile-submit" type="submit">Lernpfad starten</button>
+          <p class="profile-note" id="profile-note">
+            Wenn kein API-Proxy konfiguriert ist, startet die App mit eingebauten Fallback-Leveln.
+          </p>
+        </form>
+      </div>
+    </section>
+
+    <section class="screen screen--game is-hidden" id="game-screen" aria-live="polite">
+      <div id="gc">
+        <canvas id="c"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <button class="bi" id="bpv" type="button" disabled aria-label="Vorheriges Level">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+
+    <div class="fc">
+      <div class="pt"><div class="pf" id="pf"></div></div>
+      <button class="br" id="brst" type="button">Level zurucksetzen</button>
+    </div>
+
+    <button class="bi" id="bnxt" type="button" disabled aria-label="Nächstes Level">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+    </button>
+  </footer>
+
+  <div class="hint-tooltip" id="hint-tooltip" role="status" aria-live="polite"></div>
+
+  <div id="wo" aria-hidden="true">
+    <div class="wb"></div>
+    <div class="wc">
+      <div class="wi">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </div>
+      <p class="wt" id="wt">Level geschafft</p>
+      <p class="ws" id="ws">Alle Satzpfade sind komplett.</p>
+      <div class="sentence-review" id="sentence-review"></div>
+      <button class="wcb" id="wcb" type="button">Weiter</button>
+    </div>
+  </div>
+
+  <script type="module" src="./src/App.js?v=20260319c"></script>
+</body>
+</html>
