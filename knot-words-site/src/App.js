@@ -107,19 +107,21 @@ class App {
           if (type === "start") {
             this.sound.play("connect");
             this.renderer.emitAtCell(cell, pathState.color, 5);
-            this.tts.speak(cell.word);
+            this.tts.beginPhrase();
+            this.tts.appendWord(cell.word);
             return;
           }
 
           if (type === "advance") {
             this.sound.play("connect");
             this.renderer.emitAtCell(cell, pathState.color, 4);
-            this.tts.speak(cell.word);
+            this.tts.appendWord(cell.word);
             return;
           }
 
           if (type === "trim" || type === "rewind") {
             this.sound.play("connect");
+            this.tts.trimPhrase(pathState.cells.length);
             return;
           }
 
@@ -127,7 +129,8 @@ class App {
             this.sound.play("complete");
             this.renderer.addWave(pathState.color, pathState.cells);
             this.renderer.burstSentence(pathState.cells, pathState.color, 6);
-            this.tts.speak(cell.word);
+            const fullText = pathState.cells.map((c) => c.word).join(" ");
+            this.tts.speak(fullText);
           }
         },
         onCellReplay: ({ cell }) => {
@@ -181,11 +184,24 @@ class App {
         this.canvas.releasePointerCapture(event.pointerId);
       }
 
+      this.tts.endPhrase();
       this.game?.handlePointerUp();
     };
 
     this.canvas.addEventListener("pointerup", releasePointer);
     this.canvas.addEventListener("pointercancel", releasePointer);
+
+    this.canvas.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      if (!this.game) {
+        return;
+      }
+
+      const cell = this.renderer.getCellFromClientPoint(event.clientX, event.clientY, this.game.getState().level);
+      if (cell) {
+        this.tts.speak(cell.word);
+      }
+    });
   }
 }
 
