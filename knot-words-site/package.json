@@ -1,0 +1,14 @@
+{
+  "name": "knot-words-site",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Render-ready German sentence puzzle inspired by Knot Dots.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
