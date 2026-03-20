@@ -1,12 +1,12 @@
-import { SoundEngine } from "./audio/SoundEngine.js?v=20260319d";
-import { TTSPlayer } from "./audio/TTSPlayer.js?v=20260319d";
-import { GameEngine } from "./core/GameEngine.js?v=20260319d";
-import { Renderer } from "./render/Renderer.js?v=20260319d";
-import { AnthropicLevelService } from "./services/AnthropicLevelService.js?v=20260319d";
-import { HUD } from "./ui/HUD.js?v=20260319d";
-import { HintTooltip } from "./ui/HintTooltip.js?v=20260319d";
-import { ProfileScreen } from "./ui/ProfileScreen.js?v=20260319d";
-import { WinModal } from "./ui/WinModal.js?v=20260319d";
+import { SoundEngine } from "./audio/SoundEngine.js?v=20260320a";
+import { TTSPlayer } from "./audio/TTSPlayer.js?v=20260320a";
+import { GameEngine } from "./core/GameEngine.js?v=20260320a";
+import { Renderer } from "./render/Renderer.js?v=20260320a";
+import { AnthropicLevelService } from "./services/AnthropicLevelService.js?v=20260320a";
+import { HUD } from "./ui/HUD.js?v=20260320a";
+import { HintTooltip } from "./ui/HintTooltip.js?v=20260320a";
+import { ProfileScreen } from "./ui/ProfileScreen.js?v=20260320a";
+import { WinModal } from "./ui/WinModal.js?v=20260320a";
 
 class App {
   constructor() {
