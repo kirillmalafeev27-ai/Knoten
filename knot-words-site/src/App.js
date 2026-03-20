@@ -1,12 +1,12 @@
-import { SoundEngine } from "./audio/SoundEngine.js?v=20260320b";
-import { TTSPlayer } from "./audio/TTSPlayer.js?v=20260320b";
-import { GameEngine } from "./core/GameEngine.js?v=20260320b";
-import { Renderer } from "./render/Renderer.js?v=20260320b";
-import { AnthropicLevelService } from "./services/AnthropicLevelService.js?v=20260320b";
-import { HUD } from "./ui/HUD.js?v=20260320b";
-import { HintTooltip } from "./ui/HintTooltip.js?v=20260320b";
-import { ProfileScreen } from "./ui/ProfileScreen.js?v=20260320b";
-import { WinModal } from "./ui/WinModal.js?v=20260320b";
+import { SoundEngine } from "./audio/SoundEngine.js?v=20260320c";
+import { TTSPlayer } from "./audio/TTSPlayer.js?v=20260320c";
+import { GameEngine } from "./core/GameEngine.js?v=20260320c";
+import { Renderer } from "./render/Renderer.js?v=20260320c";
+import { AnthropicLevelService } from "./services/AnthropicLevelService.js?v=20260320c";
+import { HUD } from "./ui/HUD.js?v=20260320c";
+import { HintTooltip } from "./ui/HintTooltip.js?v=20260320c";
+import { ProfileScreen } from "./ui/ProfileScreen.js?v=20260320c";
+import { WinModal } from "./ui/WinModal.js?v=20260320c";
 
 class App {
   constructor() {
@@ -129,7 +129,7 @@ class App {
             this.sound.play("complete");
             this.renderer.addWave(pathState.color, pathState.cells);
             this.renderer.burstSentence(pathState.cells, pathState.color, 6);
-            const fullText = pathState.cells.map((c) => c.word).join(" ");
+            const fullText = sentence.path.map((c) => c.word).join(" ");
             this.tts.speak(fullText);
           }
         },

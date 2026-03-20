@@ -8,7 +8,9 @@ export class TTSPlayer {
     /* ── phrase-building state (smooth drag speech) ── */
     this._phraseWords = [];
     this._flushTimer = null;
+    this._speakTimer = null;
     this._DEBOUNCE_MS = 200;
+    this._CANCEL_GAP_MS = 60;
 
     if (this.enabled) {
       window.speechSynthesis.addEventListener("voiceschanged", () => {
@@ -61,7 +63,7 @@ export class TTSPlayer {
     this.#ensureVoice();
     this._cancelAll();
     this._phraseWords = [];
-    this._speakText(text);
+    this._safeSpeak(text);
   }
 
   /* ─────────── private helpers ─────────── */
@@ -77,26 +79,32 @@ export class TTSPlayer {
     }
 
     const text = this._phraseWords.join(" ");
-    window.speechSynthesis.cancel();
-    this._speakText(text);
+    this._cancelAll();
+    this._safeSpeak(text);
   }
 
-  _speakText(text) {
-    window.speechSynthesis.resume();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = this.lang;
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
+  /** Speak with a small gap after cancel() — Chrome sometimes drops
+   *  a speak() that fires immediately after cancel().                */
+  _safeSpeak(text) {
+    clearTimeout(this._speakTimer);
+    this._speakTimer = setTimeout(() => {
+      window.speechSynthesis.resume();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = this.lang;
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
 
-    if (this.voice) {
-      utterance.voice = this.voice;
-    }
+      if (this.voice) {
+        utterance.voice = this.voice;
+      }
 
-    window.speechSynthesis.speak(utterance);
+      window.speechSynthesis.speak(utterance);
+    }, this._CANCEL_GAP_MS);
   }
 
   _cancelAll() {
     clearTimeout(this._flushTimer);
+    clearTimeout(this._speakTimer);
     window.speechSynthesis.cancel();
   }
 
