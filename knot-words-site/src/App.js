@@ -221,6 +221,7 @@ class App {
       lastEventAt: 0,
       chaotic: false,
       completed: false,
+      lastSpokenText: "",
     };
   }
 
@@ -263,14 +264,16 @@ class App {
       next.lastVector = nextVector;
     }
 
-    if (previous.lastEventAt && now - previous.lastEventAt < 80) {
-      next.directionChanges += 1;
-    }
-
     next.lastEventAt = now;
     next.chaotic = this.#isChaoticDrag(next);
     this.dragSpeech = next;
-    this.#scheduleDragSpeech();
+
+    if (type === "advance") {
+      this.#scheduleDragSpeech();
+    } else if (type === "rewind" || type === "trim") {
+      window.clearTimeout(this.dragSpeech.timer);
+      this.dragSpeech.timer = 0;
+    }
   }
 
   #scheduleDragSpeech() {
@@ -282,7 +285,7 @@ class App {
 
     this.dragSpeech.timer = window.setTimeout(() => {
       this.#flushDragSpeech(false);
-    }, 260);
+    }, 400);
   }
 
   #flushDragSpeech(force) {
@@ -294,7 +297,18 @@ class App {
     }
 
     const payload = this.#getPhraseSpeechContext(this.dragSpeech.cells);
-    this.tts.playImmediate(payload.text, payload);
+
+    if (!force && payload.text === this.dragSpeech.lastSpokenText) {
+      return;
+    }
+
+    if (!force && this.dragSpeech.lastSpokenText && payload.text.startsWith(this.dragSpeech.lastSpokenText)) {
+      this.tts.speak(payload.text, payload);
+    } else {
+      this.tts.playImmediate(payload.text, payload);
+    }
+
+    this.dragSpeech.lastSpokenText = payload.text;
   }
 
   #isChaoticDrag(state) {

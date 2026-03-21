@@ -13,6 +13,7 @@ export class TTSPlayer {
     this.cache = new Map();
     this.activeAudio = null;
     this.activeAudioUrl = "";
+    this.activePlaybackReject = null;
     this.activeFetch = null;
     this.lastSignature = "";
     this.lastAt = 0;
@@ -188,6 +189,7 @@ export class TTSPlayer {
 
     await new Promise((resolve, reject) => {
       const cleanup = () => {
+        this.activePlaybackReject = null;
         audio.removeEventListener("ended", handleEnded);
         audio.removeEventListener("error", handleError);
       };
@@ -205,6 +207,7 @@ export class TTSPlayer {
         reject(error);
       };
 
+      this.activePlaybackReject = reject;
       audio.addEventListener("ended", handleEnded);
       audio.addEventListener("error", handleError);
       audio.play().catch((error) => {
@@ -252,6 +255,9 @@ export class TTSPlayer {
   }
 
   #stopActiveAudio() {
+    const pendingReject = this.activePlaybackReject;
+    this.activePlaybackReject = null;
+
     if (this.activeAudio) {
       this.activeAudio.pause();
       this.activeAudio.src = "";
@@ -261,6 +267,12 @@ export class TTSPlayer {
     if (this.activeAudioUrl) {
       URL.revokeObjectURL(this.activeAudioUrl);
       this.activeAudioUrl = "";
+    }
+
+    if (pendingReject) {
+      const error = new Error("Playback interrupted");
+      error.name = "AbortError";
+      pendingReject(error);
     }
   }
 

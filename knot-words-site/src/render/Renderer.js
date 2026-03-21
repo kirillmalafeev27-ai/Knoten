@@ -26,7 +26,12 @@ export class Renderer {
     this.timeZero = null;
     this.pathDrawer = new PathDrawer((cell) => this.centerForCell(cell));
 
-    window.addEventListener("resize", () => this.resize());
+    this.resizeHandler = () => this.resize();
+    window.addEventListener("resize", this.resizeHandler);
+  }
+
+  destroy() {
+    window.removeEventListener("resize", this.resizeHandler);
   }
 
   start(stateGetter) {
