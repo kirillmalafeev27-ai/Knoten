@@ -92,6 +92,10 @@ function resolveStaticPath(pathname) {
     return path.join(__dirname, "index.html");
   }
 
+  if (pathname === "/editor" || pathname === "/editor.html") {
+    return path.join(__dirname, "editor.html");
+  }
+
   const isAllowedFolder = ["/src/", "/styles/", "/assets/"].some((prefix) => pathname.startsWith(prefix));
   if (!isAllowedFolder) {
     return null;
@@ -277,10 +281,13 @@ async function handleGenerateLevels(request, response) {
   }
 
   try {
-    const { profile, blueprint } = await readJsonBody(request);
+    const { profile, blueprint, customPrompt } = await readJsonBody(request);
     validateBlueprint(blueprint);
 
-    const prompt = buildLevelPrompt(profile, blueprint);
+    let prompt = buildLevelPrompt(profile, blueprint);
+    if (typeof customPrompt === "string" && customPrompt.trim()) {
+      prompt += `\n\nADDITIONAL TEACHER INSTRUCTIONS:\n${customPrompt.trim().slice(0, 2000)}`;
+    }
     let parsed = null;
     let usedModel = ANTHROPIC_MODEL;
     let lastError = null;

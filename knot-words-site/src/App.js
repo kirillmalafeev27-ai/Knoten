@@ -132,7 +132,6 @@ class App {
             this.renderer.addWave(pathState.color, pathState.cells);
             this.renderer.burstSentence(pathState.cells, pathState.color, 6);
             this.#recordDragSpeech(type, pathState.cells, true);
-            this.#flushDragSpeech(true);
           }
         },
         onWin: ({ review, isLastLevel }) => {
@@ -185,9 +184,7 @@ class App {
       }
 
       this.game?.handlePointerUp();
-      if (!this.dragSpeech.completed) {
-        this.#flushDragSpeech(true);
-      }
+      this.#speakDragPhrase();
       this.#resetDragSpeechState();
     };
 
@@ -211,72 +208,29 @@ class App {
   }
 
   #createDragSpeechState() {
-    return {
-      timer: 0,
-      cells: [],
-      completed: false,
-      lastSpokenText: "",
-    };
+    return { cells: [], spoken: false };
   }
 
   #resetDragSpeechState() {
-    window.clearTimeout(this.dragSpeech.timer);
     this.dragSpeech = this.#createDragSpeechState();
   }
 
   #recordDragSpeech(type, cells, completed) {
-    if (type === "start") {
-      this.#resetDragSpeechState();
-      this.dragSpeech.cells = [...cells];
-      this.dragSpeech.completed = completed;
-      this.#scheduleDragSpeech();
-      return;
-    }
-
     this.dragSpeech.cells = [...cells];
-    this.dragSpeech.completed = this.dragSpeech.completed || completed;
 
-    if (type === "advance") {
-      this.#scheduleDragSpeech();
-    } else {
-      window.clearTimeout(this.dragSpeech.timer);
-      this.dragSpeech.timer = 0;
+    if (type === "complete") {
+      this.#speakDragPhrase();
     }
   }
 
-  #scheduleDragSpeech() {
-    window.clearTimeout(this.dragSpeech.timer);
-
-    if (this.dragSpeech.completed || this.dragSpeech.cells.length < 2) {
+  #speakDragPhrase() {
+    if (this.dragSpeech.spoken || this.dragSpeech.cells.length < 2) {
       return;
     }
 
-    this.dragSpeech.timer = window.setTimeout(() => {
-      this.#flushDragSpeech(false);
-    }, 400);
-  }
-
-  #flushDragSpeech(force) {
-    window.clearTimeout(this.dragSpeech.timer);
-    this.dragSpeech.timer = 0;
-
-    if (this.dragSpeech.cells.length < 2) {
-      return;
-    }
-
+    this.dragSpeech.spoken = true;
     const payload = this.#getPhraseSpeechContext(this.dragSpeech.cells);
-
-    if (!force && payload.text === this.dragSpeech.lastSpokenText) {
-      return;
-    }
-
-    if (!force && this.dragSpeech.lastSpokenText && payload.text.startsWith(this.dragSpeech.lastSpokenText)) {
-      this.tts.speak(payload.text, payload);
-    } else {
-      this.tts.playImmediate(payload.text, payload);
-    }
-
-    this.dragSpeech.lastSpokenText = payload.text;
+    this.tts.playImmediate(payload.text, payload);
   }
 
   #getPhraseSpeechContext(cells) {
