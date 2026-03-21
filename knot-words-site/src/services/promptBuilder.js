@@ -6,41 +6,36 @@ export function buildLevelPrompt(profile, blueprint) {
     topic: profile?.topic || "Alltag",
   };
 
-  const levelCount = blueprint.length;
-  const layoutDescription = blueprint
+  const levelDescriptions = blueprint
     .map((level, index) => {
-      const tokenLengths = level.sentences.map((sentence) => sentence.pathLength).join(", ");
-      const rows = level.rows || level.size;
-      const cols = level.cols || level.size;
-      return `Level ${index + 1}: ${rows}x${cols}, ${level.sentences.length} Saetze, Tokenanzahl pro Satz: [${tokenLengths}]`;
+      const tokenCounts = level.sentences.map((s) => s.pathLength);
+      return `Level ${index + 1}: ${level.sentences.length} sentences with token counts [${tokenCounts.join(", ")}]`;
     })
     .join("\n");
 
-  return `Du bist ein Deutschlehrer. Erstelle ${levelCount} Level fuer ein Sprachlernspiel.
+  return `Generate German language exercises for a learning game.
 
-Schuelerprofil:
+Student profile:
 - Name: ${safeProfile.name}
-- Alter: ${safeProfile.age}
-- Niveau: ${safeProfile.level}
-- Thema: ${safeProfile.topic}
+- Age: ${safeProfile.age}
+- CEFR level: ${safeProfile.level}
+- Topic: ${safeProfile.topic}
 
-KRITISCHE REGELN (Verstoss = Fehler):
-1. Jeder Satz hat EXAKT so viele Tokens wie angegeben. Ein Token = 1-2 Woerter (max. 3).
-2. Jeder Satz ist ein VOLLSTAENDIGER, grammatisch korrekter deutscher Satz.
-3. Jeder Satz endet mit . oder ! oder ? — KEIN Satz darf auf Artikel, Pronomen, Praeposition oder Konjunktion enden.
-4. Keine Fragmente, keine Ellipsen ("..."), keine abgehaengten Nebensaetze.
-5. Niveau ${safeProfile.level}: passende Grammatik und Lexik.
-6. translation = Uebersetzung auf Russisch, grammar_note = kurze Grammatikerklaerung auf Russisch.
+${levelDescriptions}
 
-Layout:
-${layoutDescription}
+RULES:
+1. Each sentence MUST have EXACTLY the specified number of tokens. A token is 1-3 words that fit in one grid cell.
+2. Every sentence must be a complete, grammatically correct German sentence.
+3. "translation" = Russian translation. "grammar_note" = short grammar explanation in Russian.
+4. Use vocabulary and grammar appropriate for ${safeProfile.level} level.
+5. All sentences within a level should relate to the topic "${safeProfile.topic}".
 
-Beispiel fuer einen Satz mit 4 Tokens:
-{"tokens":["Ich","lerne","jeden Tag","Deutsch."],"translation":"Я учу немецкий каждый день.","grammar_note":"Глагол lerne стоит на втором месте."}
+EXAMPLES by token count:
+3 tokens: {"tokens":["Das","ist","gut."],"translation":"Это хорошо.","grammar_note":"Связка ist после подлежащего."}
+4 tokens: {"tokens":["Ich","lerne","jeden Tag","Deutsch."],"translation":"Я учу немецкий каждый день.","grammar_note":"Глагол lerne стоит на втором месте."}
+5 tokens: {"tokens":["Wir","gehen","heute","in den","Park."],"translation":"Мы идём сегодня в парк.","grammar_note":"Предлог in с Akkusativ при движении."}
+6 tokens: {"tokens":["Am Wochenende","fahre","ich","mit dem","Zug","nach Berlin."],"translation":"На выходных я еду поездом в Берлин.","grammar_note":"При обстоятельстве времени в начале глагол остаётся на 2-м месте."}
 
-Beispiel fuer einen Satz mit 3 Tokens:
-{"tokens":["Das","ist","gut."],"translation":"Это хорошо.","grammar_note":"Связка ist после подлежащего."}
-
-Antworte NUR mit validem JSON, KEIN anderer Text:
+Output ONLY valid JSON, no other text:
 {"levels":[{"id":"generated-1","sentences":[...]}]}`;
 }

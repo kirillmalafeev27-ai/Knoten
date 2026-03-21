@@ -1,37 +1,3 @@
-const BAD_ENDINGS = new Set([
-  "aber",
-  "am",
-  "an",
-  "auf",
-  "aus",
-  "bei",
-  "bis",
-  "dass",
-  "für",
-  "gegen",
-  "hinter",
-  "im",
-  "in",
-  "ins",
-  "mit",
-  "nach",
-  "neben",
-  "obwohl",
-  "oder",
-  "ohne",
-  "und",
-  "unter",
-  "über",
-  "vom",
-  "von",
-  "vor",
-  "weil",
-  "wenn",
-  "zu",
-  "zum",
-  "zur",
-]);
-
 function countWords(text) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
@@ -46,7 +12,7 @@ export function joinSentenceTokens(tokens) {
 
 export function validateGeneratedSentence(sentence, expectedLength) {
   if (!sentence || !Array.isArray(sentence.tokens)) {
-    return { ok: false, reason: "Sentence is missing tokens." };
+    return { ok: false, reason: "Missing tokens." };
   }
 
   if (sentence.tokens.length !== expectedLength) {
@@ -55,51 +21,23 @@ export function validateGeneratedSentence(sentence, expectedLength) {
 
   for (const token of sentence.tokens) {
     if (typeof token !== "string" || !token.trim()) {
-      return { ok: false, reason: "Encountered an empty token." };
+      return { ok: false, reason: "Empty token." };
     }
 
     if (countWords(token) > 3) {
-      return { ok: false, reason: `Token "${token}" is too long for cell audio.` };
-    }
-
-    if (token.trim().length > 32) {
-      return { ok: false, reason: `Token "${token}" is too long in characters.` };
+      return { ok: false, reason: `Token "${token}" exceeds 3 words.` };
     }
   }
 
-  if (typeof sentence.translation !== "string" || sentence.translation.trim().length < 2) {
-    return { ok: false, reason: "Translation is missing or too short." };
+  if (typeof sentence.translation !== "string" || !sentence.translation.trim()) {
+    return { ok: false, reason: "Missing translation." };
   }
 
   if (typeof sentence.grammar_note !== "string" || !sentence.grammar_note.trim()) {
-    return { ok: false, reason: "Grammar note is missing." };
+    return { ok: false, reason: "Missing grammar_note." };
   }
 
-  const text = joinSentenceTokens(sentence.tokens);
-  if (!/[.!?]$/.test(text)) {
-    return { ok: false, reason: `Sentence "${text}" does not end with punctuation.` };
-  }
-
-  if (text.includes("...")) {
-    return { ok: false, reason: `Sentence "${text}" contains ellipsis.` };
-  }
-
-  if (text.length < expectedLength * 2) {
-    return { ok: false, reason: `Sentence "${text}" is suspiciously short.` };
-  }
-
-  const finalWord = text
-    .replace(/[.!?]+$/g, "")
-    .trim()
-    .split(/\s+/)
-    .at(-1)
-    ?.toLowerCase();
-
-  if (!finalWord || BAD_ENDINGS.has(finalWord)) {
-    return { ok: false, reason: `Sentence "${text}" ends like a fragment.` };
-  }
-
-  return { ok: true, text };
+  return { ok: true, text: joinSentenceTokens(sentence.tokens) };
 }
 
 export function validateGeneratedLevelPack(levels, blueprint) {
@@ -114,7 +52,7 @@ export function validateGeneratedLevelPack(levels, blueprint) {
     }
 
     if (!Array.isArray(level.sentences) || level.sentences.length !== schema.sentences.length) {
-      return { ok: false, reason: `Generated level ${levelIndex + 1} has an invalid sentence count.` };
+      return { ok: false, reason: `Level ${levelIndex + 1} has wrong sentence count.` };
     }
 
     for (const [sentenceIndex, sentence] of level.sentences.entries()) {

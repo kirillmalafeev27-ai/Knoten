@@ -1,11 +1,14 @@
 const TTS_URL_STORAGE_KEY = "knotWords.ttsUrl";
 const CACHE_LIMIT = 36;
+const FETCH_TIMEOUT_MS = 8000;
+const REMOTE_RETRY_DELAY_MS = 30_000;
 
 export class TTSPlayer {
   constructor() {
     this.enabled = "speechSynthesis" in window;
     this.endpoint = this.#resolveEndpoint();
     this.remoteAvailable = true;
+    this.remoteFailedAt = 0;
     this.voice = null;
     this.voicesLoaded = false;
     this.queue = [];
@@ -103,7 +106,9 @@ export class TTSPlayer {
       try {
         await this.#playItem(item);
       } catch (error) {
-        console.warn("TTS playback failed:", error);
+        if (error?.name !== "AbortError") {
+          console.warn("TTS playback failed:", error.message);
+        }
       }
     }
 
@@ -111,22 +116,37 @@ export class TTSPlayer {
   }
 
   async #playItem(item) {
-    if (this.remoteAvailable && this.endpoint) {
+    if (this.endpoint && this.#isRemoteAvailable()) {
       try {
         const blob = await this.#fetchRemoteAudio(item);
         await this.#playBlob(blob);
         return;
       } catch (error) {
-        if (error?.name !== "AbortError") {
-          console.warn("Remote TTS unavailable, using browser fallback:", error);
-          this.remoteAvailable = false;
-        } else {
+        if (error?.name === "AbortError") {
           throw error;
         }
+        console.warn("Remote TTS failed, falling back to browser:", error.message);
+        this.#markRemoteUnavailable();
       }
     }
 
     await this.#playBrowserSpeech(item.text);
+  }
+
+  #isRemoteAvailable() {
+    if (this.remoteAvailable) {
+      return true;
+    }
+    if (performance.now() - this.remoteFailedAt > REMOTE_RETRY_DELAY_MS) {
+      this.remoteAvailable = true;
+      return true;
+    }
+    return false;
+  }
+
+  #markRemoteUnavailable() {
+    this.remoteAvailable = false;
+    this.remoteFailedAt = performance.now();
   }
 
   async #fetchRemoteAudio(item) {
@@ -137,43 +157,40 @@ export class TTSPlayer {
 
     const controller = new AbortController();
     this.activeFetch = controller;
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-    const response = await fetch(this.endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        text: item.text,
-        previousText: item.previousText,
-        nextText: item.nextText,
-      }),
-      signal: controller.signal,
-    });
+    try {
+      const response = await fetch(this.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: item.text,
+          previousText: item.previousText,
+          nextText: item.nextText,
+        }),
+        signal: controller.signal,
+      });
 
-    this.activeFetch = null;
-
-    if (!response.ok) {
-      let message = `TTS proxy returned ${response.status}`;
-      try {
-        const payload = await response.clone().json();
-        if (payload?.error) {
-          message = payload.error;
-        }
-      } catch {
+      if (!response.ok) {
+        let message = `TTS proxy returned ${response.status}`;
         try {
-          message = await response.text();
+          const payload = await response.clone().json();
+          if (payload?.error) {
+            message = payload.error;
+          }
         } catch {
-          // no-op
+          // ignore parse error
         }
+        throw new Error(message);
       }
 
-      throw new Error(message);
+      const blob = await response.blob();
+      this.#rememberCache(cacheKey, blob);
+      return blob;
+    } finally {
+      clearTimeout(timeoutId);
+      this.activeFetch = null;
     }
-
-    const blob = await response.blob();
-    this.#rememberCache(cacheKey, blob);
-    return blob;
   }
 
   async #playBlob(blob) {
@@ -202,9 +219,8 @@ export class TTSPlayer {
 
       const handleError = () => {
         cleanup();
-        const error = new Error("Audio playback failed");
         this.#stopActiveAudio();
-        reject(error);
+        reject(new Error("Audio playback failed"));
       };
 
       this.activePlaybackReject = reject;
@@ -232,7 +248,7 @@ export class TTSPlayer {
     this.#stopBrowserSpeech();
     window.speechSynthesis.resume();
 
-    await new Promise((resolve, reject) => {
+    await new Promise((resolve) => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = "de-DE";
       utterance.rate = 1;
@@ -243,7 +259,7 @@ export class TTSPlayer {
       }
 
       utterance.addEventListener("end", resolve, { once: true });
-      utterance.addEventListener("error", reject, { once: true });
+      utterance.addEventListener("error", () => resolve(), { once: true });
       window.speechSynthesis.speak(utterance);
     });
   }
