@@ -12,34 +12,35 @@ export function buildLevelPrompt(profile, blueprint) {
       const tokenLengths = level.sentences.map((sentence) => sentence.pathLength).join(", ");
       const rows = level.rows || level.size;
       const cols = level.cols || level.size;
-      return `Level ${index + 1}: ${rows}x${cols}, ${level.sentences.length} Saetze, Satzlaengen ${tokenLengths}`;
+      return `Level ${index + 1}: ${rows}x${cols}, ${level.sentences.length} Saetze, Tokenanzahl pro Satz: [${tokenLengths}]`;
     })
     .join("\n");
 
-  return `Du bist ein Deutschlehrer. Erstelle ${levelCount} Level fuer ein Sprachlernspiel.\n\n` +
-    `Schuelerprofil:\n` +
-    `- Name: ${safeProfile.name}\n` +
-    `- Alter: ${safeProfile.age}\n` +
-    `- Niveau: ${safeProfile.level}\n` +
-    `- Thema: ${safeProfile.topic}\n\n` +
-    `Du erzeugst vollstaendige, natuerliche und grammatisch korrekte deutsche Saetze. Keine Fragmente, keine Ellipsen, keine abgehaengten Nebensaetze.\n` +
-    `Verbotene Beispiele:\n` +
-    `- "Wenn ich Geschäftsführer wäre, würde ich."\n` +
-    `- "Obwohl der Job stressig ist, gefällt."\n` +
-    `- Tokens wie "Falls die Verhandlungen scheitern" in einer einzigen Zelle.\n\n` +
-    `Technische Constraints:\n` +
-    `- Jeder Satz muss genau so viele Tokens enthalten wie seine Pfadlaenge.\n` +
-    `- Jedes Token = 1 bis maximal 3 Woerter.\n` +
-    `- Bevorzuge 1 bis 2 Woerter pro Token, damit die Audio-Ausgabe schnell bleibt.\n` +
-    `- Jeder Satz muss als GANZER SATZ vollstaendig sein und mit . ! oder ? enden.\n` +
-    `- Kein Satz darf auf Artikel, Pronomen, Konjunktion oder Praeposition enden.\n` +
-    `- Kein Satz darf als stilistisches Fragment formuliert sein.\n` +
-    `- Verwende fuer ${safeProfile.level} passende Grammatik und Lexik.\n` +
-    `- Alle Saetze eines Levels sollen thematisch zusammenpassen.\n` +
-    `- Pruefe jede Ausgabe vor dem Senden selbst auf Vollstaendigkeit und regeneriere fehlerhafte Saetze intern.\n` +
-    `- Gib nur valides JSON ohne Erklaerung zurueck.\n` +
-    `- Jede Ebene braucht genau so viele Saetze wie im Layout angegeben.\n\n` +
-    `Layout:\n${layoutDescription}\n\n` +
-    `Antwortformat:\n` +
-    `{"levels":[{"id":"generated-1","sentences":[{"tokens":["Ich","lerne","jeden Tag","Deutsch"],"translation":"...","grammar_note":"..."}]}]}`;
+  return `Du bist ein Deutschlehrer. Erstelle ${levelCount} Level fuer ein Sprachlernspiel.
+
+Schuelerprofil:
+- Name: ${safeProfile.name}
+- Alter: ${safeProfile.age}
+- Niveau: ${safeProfile.level}
+- Thema: ${safeProfile.topic}
+
+KRITISCHE REGELN (Verstoss = Fehler):
+1. Jeder Satz hat EXAKT so viele Tokens wie angegeben. Ein Token = 1-2 Woerter (max. 3).
+2. Jeder Satz ist ein VOLLSTAENDIGER, grammatisch korrekter deutscher Satz.
+3. Jeder Satz endet mit . oder ! oder ? — KEIN Satz darf auf Artikel, Pronomen, Praeposition oder Konjunktion enden.
+4. Keine Fragmente, keine Ellipsen ("..."), keine abgehaengten Nebensaetze.
+5. Niveau ${safeProfile.level}: passende Grammatik und Lexik.
+6. translation = Uebersetzung auf Russisch, grammar_note = kurze Grammatikerklaerung auf Russisch.
+
+Layout:
+${layoutDescription}
+
+Beispiel fuer einen Satz mit 4 Tokens:
+{"tokens":["Ich","lerne","jeden Tag","Deutsch."],"translation":"Я учу немецкий каждый день.","grammar_note":"Глагол lerne стоит на втором месте."}
+
+Beispiel fuer einen Satz mit 3 Tokens:
+{"tokens":["Das","ist","gut."],"translation":"Это хорошо.","grammar_note":"Связка ist после подлежащего."}
+
+Antworte NUR mit validem JSON, KEIN anderer Text:
+{"levels":[{"id":"generated-1","sentences":[...]}]}`;
 }

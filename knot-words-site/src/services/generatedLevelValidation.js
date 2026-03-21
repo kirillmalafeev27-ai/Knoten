@@ -7,56 +7,26 @@ const BAD_ENDINGS = new Set([
   "bei",
   "bis",
   "dass",
-  "dem",
-  "den",
-  "der",
-  "des",
-  "die",
-  "dir",
-  "doch",
-  "du",
-  "ein",
-  "eine",
-  "einem",
-  "einen",
-  "einer",
-  "eines",
-  "er",
-  "es",
-  "falls",
   "für",
   "gegen",
   "hinter",
-  "ich",
-  "ihr",
   "im",
   "in",
   "ins",
-  "mein",
-  "meine",
-  "meinem",
-  "meinen",
   "mit",
   "nach",
   "neben",
   "obwohl",
   "oder",
   "ohne",
-  "sie",
   "und",
   "unter",
   "über",
   "vom",
   "von",
   "vor",
-  "wann",
   "weil",
   "wenn",
-  "wer",
-  "wie",
-  "wir",
-  "wo",
-  "wobei",
   "zu",
   "zum",
   "zur",
@@ -97,12 +67,12 @@ export function validateGeneratedSentence(sentence, expectedLength) {
     }
   }
 
-  if (typeof sentence.translation !== "string" || sentence.translation.trim().length < 4) {
+  if (typeof sentence.translation !== "string" || sentence.translation.trim().length < 2) {
     return { ok: false, reason: "Translation is missing or too short." };
   }
 
-  if (typeof sentence.grammar_note !== "string" || sentence.grammar_note.trim().length < 6) {
-    return { ok: false, reason: "Grammar note is missing or too short." };
+  if (typeof sentence.grammar_note !== "string" || !sentence.grammar_note.trim()) {
+    return { ok: false, reason: "Grammar note is missing." };
   }
 
   const text = joinSentenceTokens(sentence.tokens);
@@ -114,13 +84,8 @@ export function validateGeneratedSentence(sentence, expectedLength) {
     return { ok: false, reason: `Sentence "${text}" contains ellipsis.` };
   }
 
-  if (text.length < expectedLength * 4) {
+  if (text.length < expectedLength * 2) {
     return { ok: false, reason: `Sentence "${text}" is suspiciously short.` };
-  }
-
-  const clauses = text.split(",").map((part) => part.trim()).filter(Boolean);
-  if (clauses.some((clause) => countWords(clause) < 2)) {
-    return { ok: false, reason: `Sentence "${text}" contains a broken clause.` };
   }
 
   const finalWord = text

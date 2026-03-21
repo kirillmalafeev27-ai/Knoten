@@ -149,6 +149,11 @@ export class AnthropicLevelService {
 
         const validation = validateGeneratedSentence(generatedSentence, sentence.path.length);
         if (!validation.ok) {
+          console.warn(
+            `Sentence ${sentenceIndex + 1} in level ${levelIndex + 1} rejected:`,
+            validation.reason,
+            generatedSentence
+          );
           return sentence;
         }
 
