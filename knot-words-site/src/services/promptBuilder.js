@@ -6,40 +6,36 @@ export function buildLevelPrompt(profile, blueprint) {
     topic: profile?.topic || "Alltag",
   };
 
-  const levelCount = blueprint.length;
-  const layoutDescription = blueprint
+  const levelDescriptions = blueprint
     .map((level, index) => {
-      const tokenLengths = level.sentences.map((sentence) => sentence.pathLength).join(", ");
-      const rows = level.rows || level.size;
-      const cols = level.cols || level.size;
-      return `Level ${index + 1}: ${rows}x${cols}, ${level.sentences.length} Saetze, Satzlaengen ${tokenLengths}`;
+      const tokenCounts = level.sentences.map((s) => s.pathLength);
+      return `Level ${index + 1}: ${level.sentences.length} sentences with token counts [${tokenCounts.join(", ")}]`;
     })
     .join("\n");
 
-  return `Du bist ein Deutschlehrer. Erstelle ${levelCount} Level fuer ein Sprachlernspiel.\n\n` +
-    `Schuelerprofil:\n` +
-    `- Name: ${safeProfile.name}\n` +
-    `- Alter: ${safeProfile.age}\n` +
-    `- Niveau: ${safeProfile.level}\n` +
-    `- Thema: ${safeProfile.topic}\n\n` +
-    `Du erzeugst vollstaendige, natuerliche und grammatisch korrekte deutsche Saetze. Keine Fragmente, keine Ellipsen, keine abgehaengten Nebensaetze.\n` +
-    `Verbotene Beispiele:\n` +
-    `- "Wenn ich Geschäftsführer wäre, würde ich."\n` +
-    `- "Obwohl der Job stressig ist, gefällt."\n` +
-    `- Tokens wie "Falls die Verhandlungen scheitern" in einer einzigen Zelle.\n\n` +
-    `Technische Constraints:\n` +
-    `- Jeder Satz muss genau so viele Tokens enthalten wie seine Pfadlaenge.\n` +
-    `- Jedes Token = 1 bis maximal 3 Woerter.\n` +
-    `- Bevorzuge 1 bis 2 Woerter pro Token, damit die Audio-Ausgabe schnell bleibt.\n` +
-    `- Jeder Satz muss als GANZER SATZ vollstaendig sein und mit . ! oder ? enden.\n` +
-    `- Kein Satz darf auf Artikel, Pronomen, Konjunktion oder Praeposition enden.\n` +
-    `- Kein Satz darf als stilistisches Fragment formuliert sein.\n` +
-    `- Verwende fuer ${safeProfile.level} passende Grammatik und Lexik.\n` +
-    `- Alle Saetze eines Levels sollen thematisch zusammenpassen.\n` +
-    `- Pruefe jede Ausgabe vor dem Senden selbst auf Vollstaendigkeit und regeneriere fehlerhafte Saetze intern.\n` +
-    `- Gib nur valides JSON ohne Erklaerung zurueck.\n` +
-    `- Jede Ebene braucht genau so viele Saetze wie im Layout angegeben.\n\n` +
-    `Layout:\n${layoutDescription}\n\n` +
-    `Antwortformat:\n` +
-    `{"levels":[{"id":"generated-1","sentences":[{"tokens":["Ich","lerne","jeden Tag","Deutsch"],"translation":"...","grammar_note":"..."}]}]}`;
+  return `Generate German language exercises for a learning game.
+
+Student profile:
+- Name: ${safeProfile.name}
+- Age: ${safeProfile.age}
+- CEFR level: ${safeProfile.level}
+- Topic: ${safeProfile.topic}
+
+${levelDescriptions}
+
+RULES:
+1. Each sentence MUST have EXACTLY the specified number of tokens. A token is 1-3 words that fit in one grid cell.
+2. Every sentence must be a complete, grammatically correct German sentence.
+3. "translation" = Russian translation. "grammar_note" = short grammar explanation in Russian.
+4. Use vocabulary and grammar appropriate for ${safeProfile.level} level.
+5. All sentences within a level should relate to the topic "${safeProfile.topic}".
+
+EXAMPLES by token count:
+3 tokens: {"tokens":["Das","ist","gut."],"translation":"Это хорошо.","grammar_note":"Связка ist после подлежащего."}
+4 tokens: {"tokens":["Ich","lerne","jeden Tag","Deutsch."],"translation":"Я учу немецкий каждый день.","grammar_note":"Глагол lerne стоит на втором месте."}
+5 tokens: {"tokens":["Wir","gehen","heute","in den","Park."],"translation":"Мы идём сегодня в парк.","grammar_note":"Предлог in с Akkusativ при движении."}
+6 tokens: {"tokens":["Am Wochenende","fahre","ich","mit dem","Zug","nach Berlin."],"translation":"На выходных я еду поездом в Берлин.","grammar_note":"При обстоятельстве времени в начале глагол остаётся на 2-м месте."}
+
+Output ONLY valid JSON, no other text:
+{"levels":[{"id":"generated-1","sentences":[...]}]}`;
 }

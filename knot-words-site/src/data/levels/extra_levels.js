@@ -229,6 +229,9 @@ function buildReferenceLevel(levelCode, layout, index) {
   });
 }
 
-export function extendLevelPack(levelCode, _baseLevels) {
-  return REFERENCE_LAYOUTS.map((layout, index) => buildReferenceLevel(levelCode, layout, index));
+export function extendLevelPack(levelCode, baseLevels) {
+  const referenceLevels = REFERENCE_LAYOUTS.map((layout, index) =>
+    buildReferenceLevel(levelCode, layout, baseLevels.length + index)
+  );
+  return [...baseLevels, ...referenceLevels];
 }

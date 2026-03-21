@@ -3,6 +3,7 @@ import { validateGeneratedSentence } from "./generatedLevelValidation.js";
 import { buildLevelPrompt } from "./promptBuilder.js";
 
 const STORAGE_KEY = "knotWords.apiUrl";
+const MAX_GENERATABLE_DIMENSION = 7;
 
 function cloneLevels(levels) {
   return levels.map((level) => ({
@@ -21,18 +22,35 @@ export class AnthropicLevelService {
     const apiUrl = this.#getApiUrl();
 
     if (!apiUrl) {
+      console.info("Knot Words: no API URL configured, using fallback levels.");
       return fallback;
     }
 
-    const blueprint = this.#buildBlueprint(fallback);
-    const generatedLevels = await this.#generateLevelsIndividually(apiUrl, profile, blueprint);
-    const merged = this.#mergeGeneratedLevels(fallback, generatedLevels);
+    const generatableIndices = [];
+    const blueprint = [];
 
-    if (!generatedLevels.some(Boolean)) {
-      console.warn("Knot Words fallback pack used: no generated levels passed validation.");
+    for (let i = 0; i < fallback.length; i++) {
+      const level = fallback[i];
+      const maxDim = Math.max(level.rows ?? level.size, level.cols ?? level.size);
+      if (maxDim <= MAX_GENERATABLE_DIMENSION) {
+        generatableIndices.push(i);
+        blueprint.push(this.#buildLevelBlueprint(level));
+      }
     }
 
-    return merged;
+    if (blueprint.length === 0) {
+      console.info("Knot Words: no generatable levels in pack, using fallback.");
+      return fallback;
+    }
+
+    const generatedLevels = await this.#generateWithRetry(apiUrl, profile, blueprint);
+
+    if (!generatedLevels.length) {
+      console.warn("Knot Words: AI generation failed after retries, using fallback for all levels.");
+      return fallback;
+    }
+
+    return this.#mergeGeneratedLevels(fallback, generatableIndices, generatedLevels);
   }
 
   buildPrompt(profile, blueprint) {
@@ -52,8 +70,8 @@ export class AnthropicLevelService {
     return "";
   }
 
-  #buildBlueprint(levels) {
-    return levels.map((level) => ({
+  #buildLevelBlueprint(level) {
+    return {
       id: level.id,
       size: level.size,
       rows: level.rows ?? level.size,
@@ -62,58 +80,41 @@ export class AnthropicLevelService {
         id: sentence.id,
         pathLength: sentence.path.length,
       })),
-    }));
+    };
   }
 
-  async #generateLevelsIndividually(apiUrl, profile, blueprint) {
-    return this.#mapWithConcurrency(blueprint, 3, async (levelBlueprint, index) => {
-      for (let attempt = 1; attempt <= 2; attempt += 1) {
-        try {
-          const response = await fetch(apiUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              profile,
-              blueprint: [levelBlueprint],
-            }),
-          });
+  async #generateWithRetry(apiUrl, profile, blueprint, maxAttempts = 3) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profile, blueprint }),
+        });
 
-          if (!response.ok) {
-            const errorMessage = await this.#readErrorMessage(response);
-            throw new Error(errorMessage || `Proxy returned ${response.status}`);
-          }
+        if (!response.ok) {
+          const errorMessage = await this.#readErrorMessage(response);
+          throw new Error(errorMessage || `Server returned ${response.status}`);
+        }
 
-          const payload = await response.json();
-          return payload.levels?.[0] ?? null;
-        } catch (error) {
-          if (attempt === 2) {
-            console.warn(`Generated fallback used for level ${index + 1}:`, error);
-            return null;
-          }
+        const payload = await response.json();
+        const levels = payload.levels;
+
+        if (Array.isArray(levels) && levels.length > 0) {
+          console.info(`Knot Words: AI generated ${levels.length} levels on attempt ${attempt}.`);
+          return levels;
+        }
+
+        throw new Error("Server returned empty levels array");
+      } catch (error) {
+        console.warn(`Knot Words: generation attempt ${attempt}/${maxAttempts} failed:`, error.message);
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
       }
-    });
-  }
+    }
 
-  async #mapWithConcurrency(items, concurrency, worker) {
-    const results = Array.from({ length: items.length }, () => null);
-    let cursor = 0;
-
-    const runWorker = async () => {
-      while (cursor < items.length) {
-        const currentIndex = cursor;
-        cursor += 1;
-        results[currentIndex] = await worker(items[currentIndex], currentIndex);
-      }
-    };
-
-    await Promise.all(
-      Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker())
-    );
-
-    return results;
+    return [];
   }
 
   async #readErrorMessage(response) {
@@ -129,42 +130,60 @@ export class AnthropicLevelService {
     }
   }
 
-  #mergeGeneratedLevels(fallback, generatedLevels) {
-    return fallback.map((level, levelIndex) => {
-      const generatedLevel = generatedLevels[levelIndex];
+  #mergeGeneratedLevels(fallback, generatableIndices, generatedLevels) {
+    const result = [...fallback];
+    let totalMerged = 0;
+    let totalFallback = 0;
+
+    for (let gi = 0; gi < generatableIndices.length; gi++) {
+      const fallbackIndex = generatableIndices[gi];
+      const fallbackLevel = result[fallbackIndex];
+      const generatedLevel = generatedLevels[gi];
+
       if (!generatedLevel?.sentences) {
-        return level;
+        totalFallback += fallbackLevel.sentences.length;
+        continue;
       }
 
-      const sentences = level.sentences.map((sentence, sentenceIndex) => {
-        const generatedSentence = generatedLevel.sentences[sentenceIndex];
+      const sentences = fallbackLevel.sentences.map((sentence, si) => {
+        const generated = generatedLevel.sentences[si];
 
-        if (
-          !generatedSentence ||
-          !Array.isArray(generatedSentence.tokens) ||
-          generatedSentence.tokens.length !== sentence.path.length
-        ) {
+        if (!generated || !Array.isArray(generated.tokens) || generated.tokens.length !== sentence.path.length) {
+          console.warn(
+            `Level ${fallbackIndex + 1}, sentence ${si + 1}: token count mismatch ` +
+            `(expected ${sentence.path.length}, got ${generated?.tokens?.length ?? "none"}), using fallback.`
+          );
+          totalFallback++;
           return sentence;
         }
 
-        const validation = validateGeneratedSentence(generatedSentence, sentence.path.length);
+        const validation = validateGeneratedSentence(generated, sentence.path.length);
         if (!validation.ok) {
+          console.warn(
+            `Level ${fallbackIndex + 1}, sentence ${si + 1} rejected: ${validation.reason}`,
+            generated
+          );
+          totalFallback++;
           return sentence;
         }
 
+        totalMerged++;
         return {
           ...sentence,
-          tokens: generatedSentence.tokens,
-          translation: generatedSentence.translation || sentence.translation,
-          grammarNote: generatedSentence.grammar_note || sentence.grammarNote,
+          tokens: generated.tokens,
+          translation: generated.translation || sentence.translation,
+          grammarNote: generated.grammar_note || sentence.grammarNote,
         };
       });
 
-      return {
-        ...level,
-        id: generatedLevel.id || level.id,
+      result[fallbackIndex] = {
+        ...fallbackLevel,
+        id: generatedLevel.id || fallbackLevel.id,
         sentences,
       };
-    });
+    }
+
+    console.info(`Knot Words: merged ${totalMerged} AI sentences, ${totalFallback} used fallback.`);
+    return result;
   }
 }

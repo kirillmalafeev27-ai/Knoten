@@ -14,7 +14,7 @@ const HOST = "0.0.0.0";
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
 const ANTHROPIC_VERSION = process.env.ANTHROPIC_VERSION || "2023-06-01";
-const ANTHROPIC_MAX_TOKENS = Number(process.env.ANTHROPIC_MAX_TOKENS || 1400);
+const ANTHROPIC_MAX_TOKENS = Number(process.env.ANTHROPIC_MAX_TOKENS || 4096);
 const ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1/text-to-speech";
 const ELEVENLABS_MODEL = process.env.ELEVENLABS_MODEL || "eleven_turbo_v2_5";
 const ELEVENLABS_OUTPUT_FORMAT = process.env.ELEVENLABS_OUTPUT_FORMAT || "mp3_44100_128";
@@ -186,8 +186,17 @@ function extractTextContent(payload) {
 
 function parseJsonFromText(text) {
   const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fencedMatch ? fencedMatch[1].trim() : text;
-  return JSON.parse(candidate);
+  if (fencedMatch) {
+    return JSON.parse(fencedMatch[1].trim());
+  }
+
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    return JSON.parse(text.slice(firstBrace, lastBrace + 1));
+  }
+
+  return JSON.parse(text);
 }
 
 function validateBlueprint(blueprint) {
@@ -234,6 +243,31 @@ function validateTtsPayload(payload) {
   }
 }
 
+async function callAnthropicAPI(prompt) {
+  const anthropicResponse = await fetch(ANTHROPIC_API_URL, {
+    method: "POST",
+    headers: {
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": ANTHROPIC_VERSION,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: ANTHROPIC_MAX_TOKENS,
+      system: "You generate German language exercises as JSON. Output ONLY valid JSON — no markdown fences, no preamble, no explanation. Start with { and end with }.",
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+
+  const payload = await anthropicResponse.json();
+  if (!anthropicResponse.ok) {
+    const message = payload?.error?.message || "Anthropic request failed";
+    throw new Error(`Anthropic API error ${anthropicResponse.status}: ${message}`);
+  }
+
+  return { text: extractTextContent(payload), model: payload.model || ANTHROPIC_MODEL };
+}
+
 async function handleGenerateLevels(request, response) {
   if (!process.env.ANTHROPIC_API_KEY) {
     sendJson(response, 503, {
@@ -247,45 +281,43 @@ async function handleGenerateLevels(request, response) {
     validateBlueprint(blueprint);
 
     const prompt = buildLevelPrompt(profile, blueprint);
-    const anthropicResponse = await fetch(ANTHROPIC_API_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": ANTHROPIC_VERSION,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: ANTHROPIC_MODEL,
-        max_tokens: ANTHROPIC_MAX_TOKENS,
-        messages: [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-      }),
-    });
+    let parsed = null;
+    let usedModel = ANTHROPIC_MODEL;
+    let lastError = null;
 
-    const payload = await anthropicResponse.json();
-    if (!anthropicResponse.ok) {
-      sendJson(response, anthropicResponse.status, {
-        error: payload?.error?.message || "Anthropic request failed",
-      });
-      return;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const result = await callAnthropicAPI(prompt);
+        usedModel = result.model;
+        parsed = parseJsonFromText(result.text);
+
+        const validation = validateGeneratedLevelPack(parsed.levels, blueprint);
+        if (validation.ok) {
+          break;
+        }
+
+        console.warn(`Attempt ${attempt}: validation failed — ${validation.reason}`);
+        if (attempt < 2) {
+          parsed = null;
+        }
+      } catch (error) {
+        lastError = error;
+        console.error(`Attempt ${attempt}: generation failed —`, error.message);
+        if (attempt < 2) {
+          parsed = null;
+        }
+      }
     }
 
-    const text = extractTextContent(payload);
-    const parsed = parseJsonFromText(text);
-    const validation = validateGeneratedLevelPack(parsed.levels, blueprint);
-    if (!validation.ok) {
-      console.warn("Anthropic level pack contained recoverable issues:", validation.reason);
+    if (!parsed?.levels) {
+      const errorMsg = lastError?.message || "All generation attempts failed";
+      sendJson(response, 502, { error: errorMsg });
+      return;
     }
 
     sendJson(response, 200, {
       levels: Array.isArray(parsed.levels) ? parsed.levels : [],
-      meta: {
-        model: payload.model || ANTHROPIC_MODEL,
-      },
+      meta: { model: usedModel },
     });
   } catch (error) {
     sendJson(response, 500, {
