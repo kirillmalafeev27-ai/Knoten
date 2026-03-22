@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knot Words — Level Editor</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0e0e12;--card:#1a1a24;--border:#2a2a3a;--text:#e0e0e8;--dim:#8888a0;--accent:#818CF8;--red:#FF3A5C;--green:#00E5A0}
+body{background:var(--bg);color:var(--text);font:14px/1.6 'Segoe UI',system-ui,sans-serif;padding:20px}
+h1{font-size:22px;margin-bottom:4px}
+.subtitle{color:var(--dim);margin-bottom:24px}
+.top-bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px}
+.top-bar select,.top-bar input{background:var(--card);color:var(--text);border:1px solid var(--border);padding:8px 12px;border-radius:8px;font-size:14px}
+.top-bar select{min-width:120px}
+.levels-grid{display:flex;flex-direction:column;gap:20px}
+.level-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;position:relative}
+.level-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.level-header h2{font-size:16px;font-weight:600}
+.level-meta{display:flex;gap:8px;flex-wrap:wrap}
+.badge{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:12px;color:var(--dim)}
+.level-body{display:flex;gap:20px;flex-wrap:wrap}
+.grid-preview{flex-shrink:0}
+.grid-preview canvas{border-radius:8px;background:#111118}
+.sentences-list{flex:1;min-width:300px;display:flex;flex-direction:column;gap:12px}
+.sentence-row{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:8px;background:var(--bg);border:1px solid var(--border)}
+.sentence-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;margin-top:4px;box-shadow:0 0 8px currentColor}
+.sentence-fields{flex:1;display:flex;flex-direction:column;gap:6px}
+.sentence-fields label{font-size:11px;color:var(--dim);display:block}
+.sentence-fields input,.sentence-fields textarea{width:100%;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font:13px/1.4 inherit;resize:vertical}
+.sentence-fields textarea{min-height:36px}
+.token-info{font-size:11px;color:var(--dim);margin-top:2px}
+.token-chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.token-chip{background:var(--border);border-radius:4px;padding:2px 8px;font-size:12px;cursor:text;border:1px solid transparent}
+.token-chip:focus{border-color:var(--accent);outline:none}
+.token-chip[contenteditable]{cursor:text}
+.gen-section{margin-top:32px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px}
+.gen-section h2{font-size:16px;margin-bottom:12px}
+.gen-form{display:flex;flex-direction:column;gap:12px}
+.gen-form textarea{width:100%;min-height:100px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px;font:14px/1.5 inherit;resize:vertical}
+.gen-form .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 24px;font:14px/1 inherit;cursor:pointer;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn--outline{background:transparent;border:1px solid var(--accent);color:var(--accent)}
+.gen-status{font-size:13px;color:var(--dim);min-height:20px}
+.gen-result{margin-top:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:400px;overflow:auto;white-space:pre-wrap;font:12px/1.5 'Fira Code',monospace;display:none}
+.export-section{margin-top:24px;display:flex;gap:12px;flex-wrap:wrap}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--green);color:#000;padding:10px 20px;border-radius:8px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<h1>Knot Words — Level Editor</h1>
+<p class="subtitle">Визуальный редактор уровней. Редактируй предложения, генерируй через AI.</p>
+
+<div class="top-bar">
+  <label>Уровень: <select id="level-select">
+    <option value="A1">A1</option>
+    <option value="A2">A2</option>
+    <option value="B1">B1</option>
+    <option value="B2">B2</option>
+  </select></label>
+  <label>Тема: <input id="topic-input" type="text" placeholder="Alltag, Essen..." value="Alltag"></label>
+  <button class="btn btn--outline" id="load-btn">Загрузить уровни</button>
+</div>
+
+<div class="levels-grid" id="levels-grid"></div>
+
+<div class="gen-section">
+  <h2>Генерация предложений через Claude API</h2>
+  <div class="gen-form">
+    <label style="color:var(--dim);font-size:12px">Свободный промпт (опиши, какие предложения нужны):</label>
+    <textarea id="gen-prompt" placeholder="Пример: Сгенерируй предложения на тему путешествий для уровня A2. Используй прошедшее время Perfekt. Добавь предложения с предлогами направления (nach, in, zu)."></textarea>
+    <div class="row">
+      <label style="color:var(--dim);font-size:12px">Для уровня #: <select id="gen-level-idx"></select></label>
+      <button class="btn" id="gen-btn">Сгенерировать</button>
+      <button class="btn btn--outline" id="gen-apply-btn" disabled>Применить к уровню</button>
+    </div>
+    <div class="gen-status" id="gen-status"></div>
+    <pre class="gen-result" id="gen-result"></pre>
+  </div>
+</div>
+
+<div class="export-section">
+  <button class="btn" id="export-btn">Экспорт JSON (скачать)</button>
+  <button class="btn btn--outline" id="copy-btn">Копировать JSON</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+const COLORS = {
+  R: "#FF3A5C", G: "#00E5A0", B: "#4D9EFF", Y: "#FFD040",
+  P: "#A855F7", O: "#FF6B30", C: "#59F0FF", W: "#FF3D87",
+};
+const COLOR_NAMES = { R:"Красный", G:"Зелёный", B:"Синий", Y:"Жёлтый", P:"Фиолетовый", O:"Оранжевый", C:"Голубой", W:"Розовый" };
+const COLOR_KEYS = Object.keys(COLORS);
+
+let currentLevels = [];
+let lastGenResult = null;
+
+const grid = document.getElementById("levels-grid");
+const levelSelect = document.getElementById("level-select");
+const topicInput = document.getElementById("topic-input");
+const loadBtn = document.getElementById("load-btn");
+const genPrompt = document.getElementById("gen-prompt");
+const genLevelIdx = document.getElementById("gen-level-idx");
+const genBtn = document.getElementById("gen-btn");
+const genApplyBtn = document.getElementById("gen-apply-btn");
+const genStatus = document.getElementById("gen-status");
+const genResult = document.getElementById("gen-result");
+const exportBtn = document.getElementById("export-btn");
+const copyBtn = document.getElementById("copy-btn");
+const toast = document.getElementById("toast");
+
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 2000);
+}
+
+function getColorKey(hex) {
+  for (const [k, v] of Object.entries(COLORS)) {
+    if (v.toLowerCase() === hex?.toLowerCase()) return k;
+  }
+  return "B";
+}
+
+function getColorName(hex) {
+  return COLOR_NAMES[getColorKey(hex)] || "?";
+}
+
+async function fetchLevels(level) {
+  try {
+    const mod = await import(`./src/data/levels/${level.toLowerCase()}_levels.js?t=${Date.now()}`);
+    const key = `${level}_LEVELS`;
+    return mod[key] || [];
+  } catch (e) {
+    console.error("Failed to load levels:", e);
+    return [];
+  }
+}
+
+function drawGridPreview(canvas, level) {
+  const rows = level.rows ?? level.size;
+  const cols = level.cols ?? level.size;
+  const cellSize = Math.min(36, Math.floor(240 / Math.max(rows, cols)));
+  const pad = 2;
+  canvas.width = cols * cellSize + pad * 2;
+  canvas.height = rows * cellSize + pad * 2;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw grid
+  ctx.strokeStyle = "#333";
+  ctx.lineWidth = 0.5;
+  for (let r = 0; r <= rows; r++) {
+    ctx.beginPath();
+    ctx.moveTo(pad, pad + r * cellSize);
+    ctx.lineTo(pad + cols * cellSize, pad + r * cellSize);
+    ctx.stroke();
+  }
+  for (let c = 0; c <= cols; c++) {
+    ctx.beginPath();
+    ctx.moveTo(pad + c * cellSize, pad);
+    ctx.lineTo(pad + c * cellSize, pad + rows * cellSize);
+    ctx.stroke();
+  }
+
+  // Draw paths
+  level.sentences.forEach((s) => {
+    const color = s.color || COLORS.B;
+    s.path.forEach((cell, i) => {
+      const x = pad + cell.c * cellSize;
+      const y = pad + cell.r * cellSize;
+      ctx.fillStyle = color + "40";
+      ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+
+      // Token text
+      ctx.fillStyle = "#fff";
+      ctx.font = `${Math.max(8, cellSize * 0.28)}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const token = s.tokens?.[i] || "";
+      const short = token.length > 6 ? token.slice(0, 5) + "…" : token;
+      ctx.fillText(short, x + cellSize / 2, y + cellSize / 2);
+
+      // Start marker
+      if (i === 0) {
+        ctx.beginPath();
+        ctx.arc(x + 5, y + 5, 3, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      }
+    });
+
+    // Draw path lines
+    if (s.path.length > 1) {
+      ctx.strokeStyle = color + "80";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      s.path.forEach((cell, i) => {
+        const cx = pad + cell.c * cellSize + cellSize / 2;
+        const cy = pad + cell.r * cellSize + cellSize / 2;
+        i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+      });
+      ctx.stroke();
+    }
+  });
+}
+
+function renderLevels() {
+  grid.innerHTML = "";
+  genLevelIdx.innerHTML = "";
+
+  currentLevels.forEach((level, li) => {
+    const rows = level.rows ?? level.size;
+    const cols = level.cols ?? level.size;
+
+    // Gen level selector
+    const opt = document.createElement("option");
+    opt.value = li;
+    opt.textContent = `#${li + 1} — ${level.title || level.id} (${rows}×${cols})`;
+    genLevelIdx.appendChild(opt);
+
+    // Level card
+    const card = document.createElement("div");
+    card.className = "level-card";
+    card.innerHTML = `
+      <div class="level-header">
+        <h2>Уровень #${li + 1}: ${level.title || level.id}</h2>
+        <div class="level-meta">
+          <span class="badge">${rows}×${cols}</span>
+          <span class="badge">${level.sentences.length} предложений</span>
+          <span class="badge">${level.level || "?"}</span>
+          <span class="badge">${level.topic || "—"}</span>
+        </div>
+      </div>
+      <div class="level-body">
+        <div class="grid-preview"><canvas id="grid-${li}"></canvas></div>
+        <div class="sentences-list" id="slist-${li}"></div>
+      </div>
+    `;
+    grid.appendChild(card);
+
+    // Draw preview
+    const canvas = document.getElementById(`grid-${li}`);
+    drawGridPreview(canvas, level);
+
+    // Sentences
+    const slist = document.getElementById(`slist-${li}`);
+    level.sentences.forEach((s, si) => {
+      const colorKey = getColorKey(s.color);
+      const colorHex = s.color || COLORS.B;
+      const pathLen = s.path.length;
+
+      const row = document.createElement("div");
+      row.className = "sentence-row";
+      row.innerHTML = `
+        <div class="sentence-dot" style="background:${colorHex};color:${colorHex}"></div>
+        <div class="sentence-fields">
+          <div class="token-info">
+            <strong>${getColorName(colorHex)}</strong> • Путь: ${pathLen} ячеек • Начало: (${s.path[0].r}, ${s.path[0].c})
+          </div>
+          <label>Токены (${pathLen} шт, каждый = 1-3 слова):</label>
+          <div class="token-chips" id="tokens-${li}-${si}"></div>
+          <label>Перевод:</label>
+          <input type="text" value="${(s.translation || "").replaceAll('"', '&quot;')}" data-field="translation" data-li="${li}" data-si="${si}">
+          <label>Грамматика:</label>
+          <input type="text" value="${(s.grammarNote || "").replaceAll('"', '&quot;')}" data-field="grammarNote" data-li="${li}" data-si="${si}">
+        </div>
+      `;
+      slist.appendChild(row);
+
+      // Token chips
+      const chipsContainer = document.getElementById(`tokens-${li}-${si}`);
+      s.tokens.forEach((token, ti) => {
+        const chip = document.createElement("span");
+        chip.className = "token-chip";
+        chip.contentEditable = "true";
+        chip.textContent = token;
+        chip.dataset.li = li;
+        chip.dataset.si = si;
+        chip.dataset.ti = ti;
+        chip.addEventListener("blur", () => {
+          currentLevels[li].sentences[si].tokens[ti] = chip.textContent.trim() || token;
+          drawGridPreview(document.getElementById(`grid-${li}`), currentLevels[li]);
+        });
+        chip.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") { e.preventDefault(); chip.blur(); }
+        });
+        chipsContainer.appendChild(chip);
+      });
+    });
+  });
+
+  // Field change listeners
+  grid.querySelectorAll("input[data-field]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const li = +input.dataset.li;
+      const si = +input.dataset.si;
+      const field = input.dataset.field;
+      currentLevels[li].sentences[si][field] = input.value;
+    });
+  });
+}
+
+loadBtn.addEventListener("click", async () => {
+  loadBtn.disabled = true;
+  loadBtn.textContent = "Загрузка...";
+  currentLevels = await fetchLevels(levelSelect.value);
+  loadBtn.disabled = false;
+  loadBtn.textContent = "Загрузить уровни";
+  if (!currentLevels.length) {
+    showToast("Уровни не найдены");
+    return;
+  }
+  renderLevels();
+  showToast(`Загружено ${currentLevels.length} уровней`);
+});
+
+genBtn.addEventListener("click", async () => {
+  const li = +genLevelIdx.value;
+  const level = currentLevels[li];
+  if (!level) { showToast("Сначала загрузи уровни"); return; }
+
+  const userPrompt = genPrompt.value.trim();
+  if (!userPrompt) { showToast("Введи промпт"); return; }
+
+  genBtn.disabled = true;
+  genStatus.textContent = "Генерация...";
+  genResult.style.display = "none";
+  genApplyBtn.disabled = true;
+
+  const blueprint = [{
+    id: level.id,
+    size: level.size,
+    rows: level.rows ?? level.size,
+    cols: level.cols ?? level.size,
+    sentences: level.sentences.map((s) => ({
+      id: s.id,
+      pathLength: s.path.length,
+    })),
+  }];
+
+  const profile = {
+    name: "Teacher",
+    age: "18-30",
+    level: levelSelect.value,
+    topic: topicInput.value || "Alltag",
+  };
+
+  try {
+    const response = await fetch("/api/levels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profile,
+        blueprint,
+        customPrompt: userPrompt,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || `Server error ${response.status}`);
+    }
+
+    const data = await response.json();
+    lastGenResult = { levelIndex: li, data };
+
+    genResult.textContent = JSON.stringify(data, null, 2);
+    genResult.style.display = "block";
+    genApplyBtn.disabled = false;
+
+    const sentenceCount = data.levels?.[0]?.sentences?.length || 0;
+    genStatus.textContent = `Готово: ${sentenceCount} предложений сгенерировано.`;
+  } catch (e) {
+    genStatus.textContent = `Ошибка: ${e.message}`;
+    console.error(e);
+  } finally {
+    genBtn.disabled = false;
+  }
+});
+
+genApplyBtn.addEventListener("click", () => {
+  if (!lastGenResult) return;
+  const { levelIndex, data } = lastGenResult;
+  const level = currentLevels[levelIndex];
+  const generated = data.levels?.[0];
+  if (!level || !generated?.sentences) {
+    showToast("Нет данных для применения");
+    return;
+  }
+
+  let applied = 0;
+  generated.sentences.forEach((gs, si) => {
+    const original = level.sentences[si];
+    if (!original) return;
+    if (!Array.isArray(gs.tokens) || gs.tokens.length !== original.path.length) {
+      console.warn(`Sentence ${si + 1}: expected ${original.path.length} tokens, got ${gs.tokens?.length}`);
+      return;
+    }
+    original.tokens = gs.tokens;
+    original.translation = gs.translation || original.translation;
+    original.grammarNote = gs.grammar_note || gs.grammarNote || original.grammarNote;
+    applied++;
+  });
+
+  renderLevels();
+  showToast(`Применено ${applied} предложений к уровню #${levelIndex + 1}`);
+  genApplyBtn.disabled = true;
+});
+
+exportBtn.addEventListener("click", () => {
+  const exportData = currentLevels.map((level) => ({
+    id: level.id,
+    title: level.title,
+    level: level.level,
+    topic: level.topic,
+    size: level.size,
+    rows: level.rows,
+    cols: level.cols,
+    sentences: level.sentences.map((s) => ({
+      color: s.color,
+      tokens: s.tokens,
+      translation: s.translation,
+      grammarNote: s.grammarNote,
+      pathLength: s.path.length,
+    })),
+  }));
+
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `knot-words-${levelSelect.value}-levels.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast("JSON скачан");
+});
+
+copyBtn.addEventListener("click", async () => {
+  const exportData = currentLevels.map((level) => ({
+    id: level.id,
+    title: level.title,
+    level: level.level,
+    topic: level.topic,
+    size: level.size,
+    rows: level.rows,
+    cols: level.cols,
+    sentences: level.sentences.map((s) => ({
+      color: s.color,
+      tokens: s.tokens,
+      translation: s.translation,
+      grammarNote: s.grammarNote,
+      pathLength: s.path.length,
+    })),
+  }));
+
+  await navigator.clipboard.writeText(JSON.stringify(exportData, null, 2));
+  showToast("JSON скопирован");
+});
+
+// Auto-load A1 on start
+loadBtn.click();
+</script>
+</body>
+</html>
