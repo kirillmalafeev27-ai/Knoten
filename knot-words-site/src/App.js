@@ -1,12 +1,12 @@
-import { SoundEngine } from "./audio/SoundEngine.js?v=20260321c";
-import { TTSPlayer } from "./audio/TTSPlayer.js?v=20260321c";
-import { GameEngine } from "./core/GameEngine.js?v=20260321c";
-import { Renderer } from "./render/Renderer.js?v=20260321c";
-import { AnthropicLevelService } from "./services/AnthropicLevelService.js?v=20260321c";
-import { HUD } from "./ui/HUD.js?v=20260321c";
-import { HintTooltip } from "./ui/HintTooltip.js?v=20260321c";
-import { ProfileScreen } from "./ui/ProfileScreen.js?v=20260321c";
-import { WinModal } from "./ui/WinModal.js?v=20260321c";
+import { SoundEngine } from "./audio/SoundEngine.js?v=20260322a";
+import { TTSPlayer } from "./audio/TTSPlayer.js?v=20260322a";
+import { GameEngine } from "./core/GameEngine.js?v=20260322a";
+import { Renderer } from "./render/Renderer.js?v=20260322a";
+import { AnthropicLevelService } from "./services/AnthropicLevelService.js?v=20260322a";
+import { HUD } from "./ui/HUD.js?v=20260322a";
+import { HintTooltip } from "./ui/HintTooltip.js?v=20260322a";
+import { ProfileScreen } from "./ui/ProfileScreen.js?v=20260322a";
+import { WinModal } from "./ui/WinModal.js?v=20260322a";
 
 class App {
   constructor() {
@@ -21,7 +21,9 @@ class App {
     this.levelService = new AnthropicLevelService();
     this.winTimer = null;
     this.game = null;
-    this.dragSpeech = this.#createDragSpeechState();
+
+    /** Drag speech state for seamless audio continuation. */
+    this.drag = this.#freshDragState();
 
     this.hud = new HUD({
       levelNode: document.getElementById("lvn"),
@@ -72,6 +74,7 @@ class App {
     document.getElementById("bnxt").addEventListener("click", () => this.game?.nextLevel());
     document.getElementById("brst").addEventListener("click", () => this.game?.resetLevel());
 
+    this.tts.onIdle(() => this.#onTtsIdle());
     this.#bindCanvas();
     this.renderer.start(() => this.game?.getState() ?? null);
   }
@@ -95,9 +98,10 @@ class App {
           this.renderer.clearTransient();
           this.winModal.hide();
           this.tts.reset();
-          this.#resetDragSpeechState();
+          this.drag = this.#freshDragState();
           this.hud.render(ui);
           this.renderer.resize();
+          this.#prefetchLevelAudio();
         },
         onStateChange: ({ ui }) => {
           this.hud.render(ui);
@@ -110,20 +114,20 @@ class App {
           if (type === "start") {
             this.sound.play("connect");
             this.renderer.emitAtCell(cell, pathState.color, 5);
-            this.#recordDragSpeech(type, pathState.cells, Boolean(sentence));
+            this.#onDragEvent(type, pathState.cells);
             return;
           }
 
           if (type === "advance") {
             this.sound.play("connect");
             this.renderer.emitAtCell(cell, pathState.color, 4);
-            this.#recordDragSpeech(type, pathState.cells, Boolean(sentence));
+            this.#onDragEvent(type, pathState.cells);
             return;
           }
 
           if (type === "trim" || type === "rewind") {
             this.sound.play("connect");
-            this.#recordDragSpeech(type, pathState.cells, Boolean(sentence));
+            this.#onDragEvent(type, pathState.cells);
             return;
           }
 
@@ -131,7 +135,7 @@ class App {
             this.sound.play("complete");
             this.renderer.addWave(pathState.color, pathState.cells);
             this.renderer.burstSentence(pathState.cells, pathState.color, 6);
-            this.#recordDragSpeech(type, pathState.cells, true);
+            this.#onDragEvent(type, pathState.cells);
           }
         },
         onWin: ({ review, isLastLevel }) => {
@@ -146,6 +150,46 @@ class App {
       },
     });
   }
+
+  // ─── Pre-fetching ──────────────────────────────────────────────────
+
+  #prefetchLevelAudio() {
+    const level = this.game?.getState()?.level;
+    if (!level) {
+      return;
+    }
+
+    for (const sentence of level.sentences) {
+      // Pre-fetch each individual word with sentence context.
+      sentence.path.forEach((cell, index) => {
+        const runtimeCell = level.grid[cell.r]?.[cell.c];
+        if (!runtimeCell) {
+          return;
+        }
+
+        this.tts.prefetch(runtimeCell.word, {
+          previousText: sentence.tokens.slice(0, index).join(" "),
+          nextText: sentence.tokens.slice(index + 1).join(" "),
+        });
+      });
+
+      // Pre-fetch full sentence text.
+      this.tts.prefetch(sentence.tokens.join(" "));
+
+      // Pre-fetch contiguous sub-paths of length 2-3 along each sentence path.
+      for (let start = 0; start < sentence.path.length; start++) {
+        for (let len = 2; len <= Math.min(3, sentence.path.length - start); len++) {
+          const subTokens = sentence.tokens.slice(start, start + len);
+          this.tts.prefetch(subTokens.join(" "), {
+            previousText: sentence.tokens.slice(0, start).join(" "),
+            nextText: sentence.tokens.slice(start + len).join(" "),
+          });
+        }
+      }
+    }
+  }
+
+  // ─── Canvas binding ────────────────────────────────────────────────
 
   #bindCanvas() {
     this.canvas.addEventListener("pointerdown", (event) => {
@@ -184,8 +228,7 @@ class App {
       }
 
       this.game?.handlePointerUp();
-      this.#speakDragPhrase();
-      this.#resetDragSpeechState();
+      this.#onDragRelease();
     };
 
     this.canvas.addEventListener("pointerup", releasePointer);
@@ -203,79 +246,166 @@ class App {
       event.preventDefault();
       this.sound.init();
       this.tts.unlock();
-      this.tts.playImmediate(cell.word, this.#getCellSpeechContext(cell));
+      this.tts.playImmediate(cell.word, this.#getCellContext(cell));
     });
   }
 
-  #createDragSpeechState() {
-    return { cells: [], spoken: false };
+  // ─── Seamless drag speech ──────────────────────────────────────────
+
+  #freshDragState() {
+    return {
+      cells: [],
+      spokenUpTo: 0,
+      active: false,
+    };
   }
 
-  #resetDragSpeechState() {
-    this.dragSpeech = this.#createDragSpeechState();
-  }
-
-  #recordDragSpeech(type, cells, completed) {
-    this.dragSpeech.cells = [...cells];
-
-    if (type === "complete") {
-      this.#speakDragPhrase();
-    }
-  }
-
-  #speakDragPhrase() {
-    if (this.dragSpeech.spoken || this.dragSpeech.cells.length < 2) {
+  #onDragEvent(type, cells) {
+    if (type === "start") {
+      this.tts.cancelPending();
+      this.drag = this.#freshDragState();
+      this.drag.cells = [...cells];
+      this.drag.active = true;
       return;
     }
 
-    this.dragSpeech.spoken = true;
-    const payload = this.#getPhraseSpeechContext(this.dragSpeech.cells);
-    this.tts.playImmediate(payload.text, payload);
+    if (type === "advance") {
+      this.drag.cells = [...cells];
+      this.#trySpeak();
+      return;
+    }
+
+    if (type === "trim" || type === "rewind") {
+      const newLen = cells.length;
+      this.drag.cells = [...cells];
+      if (newLen < this.drag.spokenUpTo) {
+        this.drag.spokenUpTo = newLen;
+      }
+      this.tts.cancelPending();
+      return;
+    }
+
+    if (type === "complete") {
+      this.drag.cells = [...cells];
+      this.#speakRemaining(true);
+    }
   }
 
-  #getPhraseSpeechContext(cells) {
-    const text = cells.map((cell) => cell.word).join(" ").trim();
-    const basePayload = {
-      text,
-      previousText: "",
-      nextText: "",
-      canSpeak: true,
-    };
+  #onDragRelease() {
+    if (!this.drag.active) {
+      return;
+    }
+
+    this.drag.active = false;
+
+    if (this.drag.cells.length >= 2 && this.drag.spokenUpTo < this.drag.cells.length) {
+      this.#speakRemaining(false);
+    }
+  }
+
+  /** Called when TTS finishes all queued items. */
+  #onTtsIdle() {
+    if (!this.drag.active) {
+      return;
+    }
+
+    if (this.drag.cells.length > this.drag.spokenUpTo) {
+      this.#speakRemaining(false);
+    }
+  }
+
+  /** Try to initiate speech if not already speaking. */
+  #trySpeak() {
+    if (this.tts.isPlaying()) {
+      return;
+    }
+
+    if (this.drag.cells.length >= 2 && this.drag.spokenUpTo < this.drag.cells.length) {
+      this.#speakRemaining(false);
+    }
+  }
+
+  /** Speak the cells from spokenUpTo to current end. */
+  #speakRemaining(immediate) {
+    const from = this.drag.spokenUpTo;
+    const to = this.drag.cells.length;
+    if (from >= to || to < 2) {
+      return;
+    }
+
+    const cellsToSpeak = from === 0 ? this.drag.cells.slice(0, to) : this.drag.cells.slice(from, to);
+    if (!cellsToSpeak.length) {
+      return;
+    }
+
+    const text = cellsToSpeak.map((cell) => cell.word).join(" ").trim();
+    if (!text) {
+      return;
+    }
+
+    const context = this.#getSpeechContext(cellsToSpeak, from === 0 ? null : this.drag.cells.slice(0, from));
+    this.drag.spokenUpTo = to;
+
+    if (immediate || !this.tts.isPlaying()) {
+      this.tts.append(text, context);
+    } else {
+      this.tts.append(text, context);
+    }
+  }
+
+  /** Build previousText/nextText context for a cell slice. */
+  #getSpeechContext(cells, precedingCells) {
+    const baseContext = { previousText: "", nextText: "" };
 
     if (!cells.length) {
-      return basePayload;
+      return baseContext;
+    }
+
+    if (precedingCells?.length) {
+      baseContext.previousText = precedingCells.map((cell) => cell.word).join(" ");
     }
 
     const sentenceId = cells[0].sentenceId;
     if (!sentenceId || cells.some((cell) => cell.sentenceId !== sentenceId)) {
-      return basePayload;
-    }
-
-    const indices = cells.map((cell) => cell.indexInSentence);
-    const isForward = indices.every((index, offset) => offset === 0 || index === indices[offset - 1] + 1);
-    const isReverse = indices.every((index, offset) => offset === 0 || index === indices[offset - 1] - 1);
-    if (!isForward && !isReverse) {
-      return basePayload;
+      return baseContext;
     }
 
     const sentence = this.game?.getState()?.level?.sentenceMap?.[sentenceId];
     if (!sentence) {
-      return basePayload;
+      return baseContext;
+    }
+
+    const indices = cells.map((cell) => cell.indexInSentence);
+    const isForward = indices.every((idx, i) => i === 0 || idx === indices[i - 1] + 1);
+    const isReverse = indices.every((idx, i) => i === 0 || idx === indices[i - 1] - 1);
+
+    if (!isForward && !isReverse) {
+      return baseContext;
+    }
+
+    if (isForward) {
+      const firstIdx = indices[0];
+      const lastIdx = indices.at(-1);
+      return {
+        previousText: precedingCells?.length
+          ? precedingCells.map((cell) => cell.word).join(" ")
+          : sentence.tokens.slice(0, firstIdx).join(" "),
+        nextText: sentence.tokens.slice(lastIdx + 1).join(" "),
+      };
+    }
+
+    return baseContext;
+  }
+
+  #getCellContext(cell) {
+    const sentence = this.game?.getState()?.level?.sentenceMap?.[cell.sentenceId];
+    if (!sentence) {
+      return {};
     }
 
     return {
-      text,
-      previousText: isForward ? sentence.tokens.slice(0, indices[0]).join(" ") : "",
-      nextText: isForward ? sentence.tokens.slice(indices.at(-1) + 1).join(" ") : "",
-      canSpeak: true,
-    };
-  }
-
-  #getCellSpeechContext(cell) {
-    const phrase = this.#getPhraseSpeechContext([cell]);
-    return {
-      previousText: phrase.previousText,
-      nextText: phrase.nextText,
+      previousText: sentence.tokens.slice(0, cell.indexInSentence).join(" "),
+      nextText: sentence.tokens.slice(cell.indexInSentence + 1).join(" "),
     };
   }
 }

@@ -1,5 +1,5 @@
 const TTS_URL_STORAGE_KEY = "knotWords.ttsUrl";
-const CACHE_LIMIT = 36;
+const CACHE_LIMIT = 120;
 const FETCH_TIMEOUT_MS = 8000;
 const REMOTE_RETRY_DELAY_MS = 30_000;
 
@@ -20,6 +20,7 @@ export class TTSPlayer {
     this.activeFetch = null;
     this.lastSignature = "";
     this.lastAt = 0;
+    this.idleCallback = null;
 
     if (this.enabled) {
       window.speechSynthesis.addEventListener("voiceschanged", () => {
@@ -36,19 +37,7 @@ export class TTSPlayer {
     }
   }
 
-  speak(text, options = {}) {
-    const normalized = this.#normalizeText(text);
-    if (!normalized) {
-      return;
-    }
-
-    this.#enqueue({
-      text: normalized,
-      previousText: this.#normalizeText(options.previousText),
-      nextText: this.#normalizeText(options.nextText),
-    });
-  }
-
+  /** Play immediately, cutting any current audio. */
   playImmediate(text, options = {}) {
     const normalized = this.#normalizeText(text);
     if (!normalized) {
@@ -61,6 +50,56 @@ export class TTSPlayer {
       previousText: this.#normalizeText(options.previousText),
       nextText: this.#normalizeText(options.nextText),
     });
+  }
+
+  /** Append to queue — does NOT cut current audio. Plays after current finishes. */
+  append(text, options = {}) {
+    const normalized = this.#normalizeText(text);
+    if (!normalized) {
+      return;
+    }
+
+    this.#enqueue({
+      text: normalized,
+      previousText: this.#normalizeText(options.previousText),
+      nextText: this.#normalizeText(options.nextText),
+    });
+  }
+
+  /** Pre-fetch audio into cache without playing. */
+  prefetch(text, options = {}) {
+    const normalized = this.#normalizeText(text);
+    if (!normalized || !this.endpoint || !this.#isRemoteAvailable()) {
+      return;
+    }
+
+    const item = {
+      text: normalized,
+      previousText: this.#normalizeText(options.previousText),
+      nextText: this.#normalizeText(options.nextText),
+    };
+
+    const cacheKey = JSON.stringify(item);
+    if (this.cache.has(cacheKey)) {
+      return;
+    }
+
+    this.#fetchRemoteAudio(item).catch(() => {});
+  }
+
+  /** Whether audio is currently playing or queued. */
+  isPlaying() {
+    return this.processing || this.queue.length > 0;
+  }
+
+  /** Set callback fired when queue drains and playback ends. */
+  onIdle(callback) {
+    this.idleCallback = callback;
+  }
+
+  /** Cancel queued items but let current playback finish. */
+  cancelPending() {
+    this.queue = [];
   }
 
   reset() {
@@ -113,6 +152,7 @@ export class TTSPlayer {
     }
 
     this.processing = false;
+    this.idleCallback?.();
   }
 
   async #playItem(item) {
